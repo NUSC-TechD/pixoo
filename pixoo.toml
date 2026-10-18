@@ -1,0 +1,14 @@
+# All Pixoo devices receive this shared identity during cloud bootstrap.
+device_id = 12345
+
+# Add one [[screens]] block per physical display. The address can be a DHCP
+# reservation or a local DNS name.
+[[screens]]
+name = "makersSaga"
+address = "10.42.0.8"
+refresh_seconds = 900
+
+[[screens.views]]
+type = "haze"
+duration_seconds = 10
+region = "west"

@@ -1,0 +1,18 @@
+services:
+  pixoo:
+    build: .
+    image: nusc-pixoo:local
+    container_name: nusc-pixoo
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PIXOOPAL_HOST_IP: ${PIXOOPAL_HOST_IP:-10.42.0.1}
+      HTTP_PORT: ${HTTP_PORT:-80}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      PUBLIC_IP: ${PUBLIC_IP:-80.92.211.126}
+      PIXOO_CONFIG: /app/pixoo.toml
+    volumes:
+      - ./pixoo.toml:/app/pixoo.toml:ro
