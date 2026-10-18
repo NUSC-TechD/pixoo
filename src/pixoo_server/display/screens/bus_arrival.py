@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -9,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..drawing import draw_centered, draw_text, fill_rect, new_frame, text_width
 from ..models import FrameSequence
+
+logger = logging.getLogger(__name__)
 
 ROUTE_COLORS = {
     "D1": (210, 90, 230),
@@ -53,6 +56,8 @@ class BusArrivalScreen:
     The screen uses a compact 64-by-64 layout with route-color markers and two
     ETA columns. It only renders content; the display scheduler controls when
     the resulting frame is encoded and uploaded to the physical Pixoo.
+    Failed requests produce an animated unavailable-data view so other content
+    can continue refreshing. The next scheduled render retries the request.
     """
 
     def __init__(self, api_base_url: str) -> None:
@@ -60,10 +65,32 @@ class BusArrivalScreen:
 
     async def render(self, client: httpx.AsyncClient, options: dict[str, Any]) -> FrameSequence:
         stop = str(options.get("stop", "UTOWN")).upper()
-        response = await client.get(f"{self._api_base_url}/{stop}")
-        response.raise_for_status()
-        arrivals = parse_bus_arrivals(response.json())
+        try:
+            response = await client.get(f"{self._api_base_url}/{stop}")
+            response.raise_for_status()
+            arrivals = parse_bus_arrivals(response.json())
+        except (httpx.HTTPError, ValueError) as error:
+            logger.warning("Bus arrivals unavailable for %s: %s", stop, error)
+            return render_unavailable(stop)
         return FrameSequence(frames=[render_frame(arrivals)], speed_ms=250)
+
+
+def render_unavailable(stop: str) -> FrameSequence:
+    """Show an unavailable-data notice with dots advancing every half second."""
+    frame = new_frame()
+    draw_centered(frame, f"{stop} BUS"[:10], 2, (235, 240, 245))
+    fill_rect(frame, 2, 9, 60, 1, (35, 45, 55))
+    draw_centered(frame, "LIVE DATA", 23, (235, 240, 245))
+    draw_centered(frame, "UNAVAILABLE", 32, (245, 170, 65))
+    # Reserve all three dots so the word stays in place as the dots animate.
+    x = (64 - text_width("RETRYING...")) // 2
+    draw_text(frame, "RETRYING", x, 48, (135, 145, 155))
+    frames = []
+    for dots in range(4):
+        phase = frame.copy()
+        draw_text(phase, "." * dots, x + 8 * 4, 48, (135, 145, 155))
+        frames.extend([bytes(phase)] * 2)
+    return FrameSequence(frames=frames, speed_ms=250)
 
 
 def parse_bus_arrivals(payload: dict[str, Any]) -> BusStopTimings:

@@ -62,6 +62,10 @@ stop = "UTOWN"
 
 Add another `[[screens]]` block to drive another Pixoo independently. A physical screen may contain multiple `[[screens.views]]` entries. Each content screen is shown for 10 seconds by default, or for its configured `duration_seconds`, before the GIF advances to the next one. The Pixoo loops the complete GIF automatically and indefinitely.
 
+If the bus API fails, its view shows `LIVE DATA UNAVAILABLE` with animated
+`RETRYING...` dots while haze continues refreshing. The server logs the failure
+and retries at the next playlist refresh; successful responses restore the bus timings.
+
 Environment variables:
 
 | Variable | Default | Purpose |

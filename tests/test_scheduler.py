@@ -1,12 +1,20 @@
+import asyncio
 from io import BytesIO
 
+import httpx
 from PIL import Image
 
-from pixoo_server.config.models import ViewConfig
+from pixoo_server.config.models import PixooConfig, ViewConfig
 from pixoo_server.display.gif import encode_gif
 from pixoo_server.display.models import FrameSequence
-from pixoo_server.display.scheduler import build_playlist
-from pixoo_server.display.screens.bus_arrival import BusStopTimings, BusTiming, render_frame
+from pixoo_server.display.scheduler import DisplayScheduler, build_playlist
+from pixoo_server.display.screens.bus_arrival import (
+    BusStopTimings,
+    BusTiming,
+    render_frame,
+    render_unavailable,
+)
+from pixoo_server.display.screens.haze import HazeScreen
 from pixoo_server.display.screens.haze import render_frame as render_haze_frame
 
 
@@ -102,3 +110,58 @@ def test_encoded_haze_and_bus_each_last_exactly_five_seconds() -> None:
         assert durations == [250] * 40
         assert sum(durations[:20]) == 5000
         assert sum(durations[20:]) == 5000
+
+
+def test_bus_failure_keeps_haze_refreshing_and_uploads_fallback(monkeypatch) -> None:
+    haze_renders = 0
+
+    async def render_haze(self, client, options) -> FrameSequence:
+        nonlocal haze_renders
+        haze_renders += 1
+        return FrameSequence(frames=[bytes((haze_renders, 8, 14)) * (64 * 64)])
+
+    monkeypatch.setattr(HazeScreen, "render", render_haze)
+
+    async def run() -> None:
+        uploads = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal uploads
+            if request.method == "POST":
+                uploads += 1
+                return httpx.Response(200, json={"error_code": 0})
+            return httpx.Response(503)
+
+        config = PixooConfig(
+            name="test",
+            address="pixoo.example",
+            views=[
+                ViewConfig(type="haze", duration_seconds=5),
+                ViewConfig(type="bus_arrival", duration_seconds=5),
+            ],
+        )
+        scheduler = DisplayScheduler(
+            (config,), None, "http://server.example", "https://bus.example/api/stop"
+        )
+        fallback = render_unavailable("UTOWN")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            scheduler._client = client
+            for attempt in (1, 2):
+                await scheduler.refresh("test")
+                data = scheduler.animation("test")
+                assert data is not None
+                with Image.open(BytesIO(data)) as animation:
+                    assert animation.n_frames == 40
+                    assert animation.convert("RGB").tobytes() == (
+                        bytes((attempt, 8, 14)) * (64 * 64)
+                    )
+                    for index in range(20):
+                        animation.seek(20 + index)
+                        assert animation.info["duration"] == 250
+                        assert animation.convert("RGB").tobytes() == fallback.frames[index % 8]
+                assert scheduler.statuses["test"].last_error is None
+                assert scheduler.statuses["test"].last_updated_at is not None
+        assert uploads == 2
+
+    asyncio.run(run())
+    assert haze_renders == 2

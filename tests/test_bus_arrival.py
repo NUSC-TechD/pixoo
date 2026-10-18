@@ -1,12 +1,14 @@
 import asyncio
 
 import httpx
+import pytest
 
 from pixoo_server.display.screens.bus_arrival import (
     BusArrivalScreen,
     format_eta,
     parse_bus_arrivals,
     render_frame,
+    render_unavailable,
 )
 
 
@@ -60,3 +62,46 @@ def test_screen_fetches_the_configured_stop() -> None:
         assert sequence.speed_ms == 250
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("failure", ["timeout", "http_error", "invalid_json", "invalid_payload"])
+def test_api_failures_show_animated_fallback_and_recover(failure: str, caplog) -> None:
+    async def run() -> None:
+        calls = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                return httpx.Response(200, json=bus_payload())
+            if failure == "timeout":
+                raise httpx.ReadTimeout("Bus API timed out", request=request)
+            if failure == "http_error":
+                return httpx.Response(503)
+            if failure == "invalid_json":
+                return httpx.Response(200, text="not JSON")
+            return httpx.Response(200, json={"error": "Unavailable"})
+
+        screen = BusArrivalScreen("https://bus.example/api/stop")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            fallback = await screen.render(client, {"stop": "UTOWN"})
+            recovered = await screen.render(client, {"stop": "UTOWN"})
+
+        assert fallback == render_unavailable("UTOWN")
+        assert recovered.frames == [render_frame(parse_bus_arrivals(bus_payload()))]
+        assert calls == 2
+        assert "Bus arrivals unavailable for UTOWN" in caplog.text
+
+    asyncio.run(run())
+
+
+def test_retry_dots_animate_without_moving_the_notice() -> None:
+    sequence = render_unavailable("UTOWN")
+
+    assert sequence.speed_ms == 250
+    assert len(sequence.frames) == 8
+    assert len(set(sequence.frames)) == 4
+    for index in range(0, 8, 2):
+        assert sequence.frames[index] == sequence.frames[index + 1]
+    # Header and message remain unchanged; only the retry line animates.
+    assert len({frame[: 48 * 64 * 3] for frame in sequence.frames}) == 1
