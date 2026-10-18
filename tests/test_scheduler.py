@@ -2,6 +2,7 @@ import asyncio
 from io import BytesIO
 
 import httpx
+import pytest
 from PIL import Image
 
 from pixoo_server.config.models import PixooConfig, ViewConfig
@@ -14,8 +15,9 @@ from pixoo_server.display.screens.bus_arrival import (
     render_frame,
     render_unavailable,
 )
-from pixoo_server.display.screens.haze import HazeScreen
+from pixoo_server.display.screens.haze import PSI_URL, WEATHER_URL, HazeScreen
 from pixoo_server.display.screens.haze import render_frame as render_haze_frame
+from pixoo_server.display.screens.unavailable import render_unavailable as render_unavailable_notice
 
 
 def test_playlist_repeats_each_view_for_its_duration() -> None:
@@ -165,3 +167,79 @@ def test_bus_failure_keeps_haze_refreshing_and_uploads_fallback(monkeypatch) -> 
 
     asyncio.run(run())
     assert haze_renders == 2
+
+
+@pytest.mark.parametrize("failed_url", [PSI_URL, WEATHER_URL])
+def test_haze_failure_keeps_bus_timings_refreshing(failed_url: str) -> None:
+    async def run() -> None:
+        bus_requests = 0
+        uploads = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal bus_requests, uploads
+            if request.method == "POST":
+                uploads += 1
+                return httpx.Response(200, json={"error_code": 0})
+            if request.url.host == "bus.example":
+                bus_requests += 1
+                return httpx.Response(
+                    200,
+                    json={
+                        "etas": {
+                            "busStopName": "UTOWN",
+                            "busStopCaption": "University Town",
+                            "timings": [
+                                {
+                                    "name": "D1",
+                                    "arrivalTime": str(11 - bus_requests),
+                                    "nextArrivalTime": "35",
+                                }
+                            ],
+                        }
+                    },
+                )
+            if str(request.url) == failed_url:
+                return httpx.Response(503)
+            return httpx.Response(200, json={})
+
+        config = PixooConfig(
+            name="test",
+            address="pixoo.example",
+            views=[
+                ViewConfig(type="haze", duration_seconds=5),
+                ViewConfig(type="bus_arrival", duration_seconds=5),
+            ],
+        )
+        scheduler = DisplayScheduler(
+            (config,), None, "http://server.example", "https://bus.example/api/stop"
+        )
+        fallback = render_unavailable_notice("HAZE")
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            scheduler._client = client
+            for attempt in (1, 2):
+                await scheduler.refresh("test")
+                data = scheduler.animation("test")
+                assert data is not None
+                with Image.open(BytesIO(data)) as animation:
+                    assert animation.n_frames == 40
+                    for index in range(20):
+                        animation.seek(index)
+                        assert animation.convert("RGB").tobytes() == fallback.frames[index % 8]
+                    animation.seek(20)
+                    expected = render_frame(
+                        BusStopTimings(
+                            busStopName="UTOWN",
+                            busStopCaption="University Town",
+                            timings=[
+                                BusTiming(
+                                    name="D1", arrivalTime=str(11 - attempt), nextArrivalTime="35"
+                                )
+                            ],
+                        )
+                    )
+                    assert animation.convert("RGB").tobytes() == expected
+                assert scheduler.statuses["test"].last_error is None
+        assert bus_requests == 2
+        assert uploads == 2
+
+    asyncio.run(run())

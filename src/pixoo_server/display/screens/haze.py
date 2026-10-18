@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime
 from typing import Any
 
@@ -16,6 +17,9 @@ from ..drawing import (
     text_width,
 )
 from ..models import FrameSequence
+from .unavailable import render_unavailable
+
+logger = logging.getLogger(__name__)
 
 PSI_URL = "https://api-open.data.gov.sg/v2/real-time/api/psi"
 WEATHER_URL = "https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast"
@@ -29,6 +33,8 @@ class HazeScreen:
     This screen fetches PSI and forecast data from data.gov.sg for the view's
     configured region, then converts the result into a :class:`FrameSequence`.
     It only creates content; it neither selects a screen nor uploads frames.
+    If PSI or weather data is unavailable, it renders an animated retry notice
+    so other screens can keep refreshing until the next successful request.
     """
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -40,22 +46,28 @@ class HazeScreen:
         region = str(options.get("region", "west")).lower()
         if region not in REGIONS:
             raise ValueError(f"Unknown PSI region: {region}")
-        psi_response, weather_response = await asyncio.gather(
-            client.get(PSI_URL, headers=self._headers),
-            client.get(WEATHER_URL, headers=self._headers),
-        )
-        psi_response.raise_for_status()
-        weather_response.raise_for_status()
-        values, timestamp = parse_psi(psi_response.json())
-        weather = parse_weather(weather_response.json(), region)
-        frames = [
-            render_frame(values[region], weather, animation_frame)
-            for animation_frame in range(len(ANIMATION_LEVELS))
-        ]
+        try:
+            psi_response, weather_response = await asyncio.gather(
+                client.get(PSI_URL, headers=self._headers),
+                client.get(WEATHER_URL, headers=self._headers),
+            )
+            psi_response.raise_for_status()
+            weather_response.raise_for_status()
+            values, timestamp = parse_psi(psi_response.json())
+            weather = parse_weather(weather_response.json(), region)
+            frames = [
+                render_frame(values[region], weather, animation_frame)
+                for animation_frame in range(len(ANIMATION_LEVELS))
+            ]
+        except (httpx.HTTPError, ValueError, TypeError) as error:
+            logger.warning("Haze data unavailable for %s: %s", region, error)
+            return render_unavailable("HAZE")
         return FrameSequence(frames=frames, speed_ms=250)
 
 
 def parse_psi(payload: dict[str, Any]) -> tuple[dict[str, int], str]:
+    if not isinstance(payload, dict):
+        raise ValueError("Unexpected PSI response from data.gov.sg")
     if payload.get("code") != 0:
         raise ValueError(payload.get("errorMsg") or "data.gov.sg returned a PSI error")
     try:
@@ -67,6 +79,8 @@ def parse_psi(payload: dict[str, Any]) -> tuple[dict[str, int], str]:
 
 
 def parse_weather(payload: dict[str, Any], region: str) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("Unexpected weather response from data.gov.sg")
     if payload.get("code") != 0:
         raise ValueError(payload.get("errorMsg") or "data.gov.sg returned a weather error")
     try:
