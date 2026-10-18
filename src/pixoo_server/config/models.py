@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ViewConfig(BaseModel):
     """Describe one content item in a screen's playlist.
 
-    A view selects a content screen (currently ``haze``), controls how long its
+    A view selects a content screen, controls how long its
     frames remain visible, and holds screen-specific options such as the PSI
     region. It does not identify a physical Pixoo; that is the responsibility
     of :class:`PixooConfig`.
@@ -18,7 +18,7 @@ class ViewConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    type: Literal["haze"]
+    type: Literal["haze", "bus_arrival"]
     duration_seconds: int = Field(default=10, ge=1, le=30)
 
     @property
@@ -39,5 +39,5 @@ class PixooConfig(BaseModel):
 
     name: str = Field(min_length=1, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     address: str = Field(min_length=1)
-    refresh_seconds: int = Field(default=900, ge=60)
+    refresh_seconds: int = Field(default=60, ge=60)
     views: list[ViewConfig] = Field(min_length=1)

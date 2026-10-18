@@ -56,6 +56,7 @@ MQTT_PORT=1883
 PUBLIC_IP=80.92.211.126
 PIXOO_CONFIG=/app/pixoo.toml
 DATA_GOV_SG_API_KEY=
+NUS_BUS_API_BASE_URL=https://bus.hewliyang.com/api/stop
 ```
 
 Edit `pixoo.toml` with one block per physical Pixoo:
@@ -66,12 +67,17 @@ device_id = 12345
 [[screens]]
 name = "makerspace"
 address = "10.42.0.8"
-refresh_seconds = 900
+refresh_seconds = 60
 
 [[screens.views]]
 type = "haze"
-duration_seconds = 10
+duration_seconds = 5
 region = "west"
+
+[[screens.views]]
+type = "bus_arrival"
+duration_seconds = 5
+stop = "UTOWN"
 ```
 
 The `address` must be reachable from the Pi. A DHCP reservation is preferable so it does not change after a reboot.

@@ -13,6 +13,7 @@ from pixoo_server.config.models import PixooConfig, ViewConfig
 from .client import PixooClient
 from .gif import encode_gif
 from .models import FrameSequence
+from .screens.bus_arrival import BusArrivalScreen
 from .screens.haze import HazeScreen
 
 logger = logging.getLogger(__name__)
@@ -48,12 +49,16 @@ class DisplayScheduler:
         screens: tuple[PixooConfig, ...],
         api_key: str | None,
         media_base_url: str,
+        bus_api_base_url: str = "https://bus.hewliyang.com/api/stop",
     ) -> None:
         self.screens = {screen.name: screen for screen in screens}
         self.statuses = {name: ScreenStatus(name=name) for name in self.screens}
         self._animations: dict[str, bytes] = {}
         self._media_base_url = media_base_url.rstrip("/")
-        self._screen_types = {"haze": HazeScreen(api_key)}
+        self._screen_types = {
+            "haze": HazeScreen(api_key),
+            "bus_arrival": BusArrivalScreen(bus_api_base_url),
+        }
         self._tasks: list[asyncio.Task[None]] = []
         self._client: httpx.AsyncClient | None = None
 
@@ -136,7 +141,6 @@ def build_playlist(items: list[tuple[ViewConfig, FrameSequence]]) -> FrameSequen
         raise ValueError("All views in a playlist must use the same frame speed")
     frames: list[bytes] = []
     for view, sequence in items:
-        sequence_duration_ms = len(sequence.frames) * speed_ms
-        repeats = max(1, math.ceil(view.duration_seconds * 1000 / sequence_duration_ms))
-        frames.extend(sequence.frames * repeats)
+        frame_count = math.ceil(view.duration_seconds * 1000 / speed_ms)
+        frames.extend(sequence.frames[index % len(sequence.frames)] for index in range(frame_count))
     return FrameSequence(frames=frames, speed_ms=speed_ms)
