@@ -1,3 +1,5 @@
+import hashlib
+
 from pixoo_server.display.screens.haze import parse_psi, parse_weather, psi_style, render_frame
 
 
@@ -66,3 +68,20 @@ def test_psi_thresholds() -> None:
     assert psi_style(51)[0] == "MODERATE"
     assert psi_style(101)[0] == "UNHEALTHY"
     assert psi_style(301)[0] == "HAZARDOUS"
+
+
+def test_render_matches_original_pixel_art() -> None:
+    frame = render_frame(
+        value=286,
+        weather={
+            "forecast": "Partly Cloudy",
+            "low": 25,
+            "high": 34,
+            "date": "2026-10-15",
+        },
+        animation_frame=3,
+    )
+
+    assert hashlib.sha256(frame).hexdigest() == (
+        "2215912e70223795956e86c80f09efb6ee9c3ecf032d3e5b65c10875622b9be3"
+    )

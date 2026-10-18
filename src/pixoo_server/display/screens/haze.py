@@ -1,18 +1,60 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import httpx
-from PIL import Image, ImageDraw, ImageFont
 
 from ..models import FrameSequence
 
 PSI_URL = "https://api-open.data.gov.sg/v2/real-time/api/psi"
 WEATHER_URL = "https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast"
 REGIONS = {"north", "south", "east", "west", "central"}
+SIZE = 64
 ANIMATION_LEVELS = (0.70, 0.80, 0.90, 1.00, 1.00, 0.90, 0.80, 0.70)
+FONT = {
+    " ": ("000", "000", "000", "000", "000"),
+    "-": ("000", "000", "111", "000", "000"),
+    ".": ("000", "000", "000", "000", "010"),
+    ":": ("000", "010", "000", "010", "000"),
+    "0": ("111", "101", "101", "101", "111"),
+    "1": ("010", "110", "010", "010", "111"),
+    "2": ("111", "001", "111", "100", "111"),
+    "3": ("111", "001", "111", "001", "111"),
+    "4": ("101", "101", "111", "001", "001"),
+    "5": ("111", "100", "111", "001", "111"),
+    "6": ("111", "100", "111", "101", "111"),
+    "7": ("111", "001", "010", "010", "010"),
+    "8": ("111", "101", "111", "101", "111"),
+    "9": ("111", "101", "111", "001", "111"),
+    "A": ("010", "101", "111", "101", "101"),
+    "B": ("110", "101", "110", "101", "110"),
+    "C": ("111", "100", "100", "100", "111"),
+    "D": ("110", "101", "101", "101", "110"),
+    "E": ("111", "100", "110", "100", "111"),
+    "F": ("111", "100", "110", "100", "100"),
+    "G": ("111", "100", "101", "101", "111"),
+    "H": ("101", "101", "111", "101", "101"),
+    "I": ("111", "010", "010", "010", "111"),
+    "J": ("001", "001", "001", "101", "111"),
+    "K": ("101", "101", "110", "101", "101"),
+    "L": ("100", "100", "100", "100", "111"),
+    "M": ("101", "111", "111", "101", "101"),
+    "N": ("101", "111", "111", "111", "101"),
+    "O": ("111", "101", "101", "101", "111"),
+    "P": ("111", "101", "111", "100", "100"),
+    "Q": ("111", "101", "101", "111", "001"),
+    "R": ("110", "101", "110", "101", "101"),
+    "S": ("111", "100", "111", "001", "111"),
+    "T": ("111", "010", "010", "010", "010"),
+    "U": ("101", "101", "101", "101", "111"),
+    "V": ("101", "101", "101", "101", "010"),
+    "W": ("101", "101", "111", "111", "101"),
+    "X": ("101", "101", "010", "101", "101"),
+    "Y": ("101", "101", "010", "010", "010"),
+    "Z": ("111", "001", "010", "100", "111"),
+}
 
 
 class HazeScreen:
@@ -40,7 +82,10 @@ class HazeScreen:
         weather_response.raise_for_status()
         values, timestamp = parse_psi(psi_response.json())
         weather = parse_weather(weather_response.json(), region)
-        frames = [render_frame(values[region], weather, level) for level in ANIMATION_LEVELS]
+        frames = [
+            render_frame(values[region], weather, animation_frame)
+            for animation_frame in range(len(ANIMATION_LEVELS))
+        ]
         return FrameSequence(frames=frames, speed_ms=250)
 
 
@@ -94,54 +139,178 @@ def psi_style(value: int) -> tuple[str, tuple[int, int, int]]:
     return "HAZARDOUS", (170, 55, 210)
 
 
-def render_frame(value: int, weather: dict[str, Any], level: float = 1.0) -> bytes:
-    image = Image.new("RGB", (64, 64), (4, 8, 14))
-    draw = ImageDraw.Draw(image)
-    small = ImageFont.load_default(size=7)
-    medium = ImageFont.load_default(size=9)
-    large = ImageFont.load_default(size=20)
+def render_frame(value: int, weather: dict[str, Any], animation_frame: int = 0) -> bytes:
+    """Render one animation phase using the original pixel-art layout."""
+    frame = bytearray((4, 8, 14) * (SIZE * SIZE))
     category, accent = psi_style(value)
-    display_date = datetime.fromisoformat(weather["date"]).strftime("%a %d %b").upper()
+    display_date = datetime.fromisoformat(weather["date"]).date()
+    date_text = display_date.strftime("%a %d %b").upper()
+    week = nus_week_label(display_date)
+    heading = f"{week} {date_text}" if week else date_text
+    level = ANIMATION_LEVELS[animation_frame]
 
-    _center(draw, display_date, 1, (235, 240, 245), small)
-    _center(draw, "24H PSI", 9, (190, 205, 220), small)
-    _center(draw, str(value), 14, _dim(accent, level), large)
-    _center(draw, category, 34, accent, small)
-    _draw_weather_icon(draw, str(weather["forecast"]), level)
-    _center(draw, f"{weather['low']}-{weather['high']}C", 47, (100, 195, 245), medium, x=12)
-    _center(draw, "TECHD X MAKERS", 57, _dim((235, 240, 245), 0.85 + 0.15 * level), small)
-    return image.tobytes()
+    draw_centered(frame, heading, 2, (235, 240, 245))
+    draw_centered(frame, "24H PSI", 10, (190, 205, 220))
+    draw_centered(frame, str(value), 17, dim_color(accent, level), scale=3)
+    draw_centered(frame, category, 34, accent)
+    draw_weather_icon(frame, str(weather["forecast"]), animation_frame)
+    temperature = f"{weather['low']}-{weather['high']}C"
+    draw_text(
+        frame,
+        temperature,
+        48 - text_width(temperature) // 2,
+        47,
+        (100, 195, 245),
+    )
+    draw_centered(
+        frame,
+        "TECHD X MAKERS",
+        58,
+        dim_color((235, 240, 245), 0.85 + 0.15 * level),
+    )
+    return bytes(frame)
 
 
-def _center(
-    draw: ImageDraw.ImageDraw,
+def set_pixel(frame: bytearray, x: int, y: int, color: tuple[int, int, int]) -> None:
+    """Set one RGB pixel when its coordinates are inside the display."""
+    if 0 <= x < SIZE and 0 <= y < SIZE:
+        offset = (y * SIZE + x) * 3
+        frame[offset : offset + 3] = bytes(color)
+
+
+def fill_rect(
+    frame: bytearray,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    color: tuple[int, int, int],
+) -> None:
+    """Fill a rectangular region in a raw RGB frame."""
+    for row in range(y, y + height):
+        for column in range(x, x + width):
+            set_pixel(frame, column, row, color)
+
+
+def text_width(text: str, scale: int = 1) -> int:
+    """Return the rendered width of text in the custom 3-by-5 font."""
+    return max(0, len(text) * 4 * scale - scale)
+
+
+def draw_text(
+    frame: bytearray,
+    text: str,
+    x: int,
+    y: int,
+    color: tuple[int, int, int],
+    scale: int = 1,
+) -> None:
+    """Draw text using the original custom pixel font."""
+    cursor = x
+    for character in text.upper():
+        glyph = FONT.get(character, FONT[" "])
+        for row, bits in enumerate(glyph):
+            for column, bit in enumerate(bits):
+                if bit == "1":
+                    for dy in range(scale):
+                        for dx in range(scale):
+                            set_pixel(
+                                frame,
+                                cursor + column * scale + dx,
+                                y + row * scale + dy,
+                                color,
+                            )
+        cursor += 4 * scale
+
+
+def draw_centered(
+    frame: bytearray,
     text: str,
     y: int,
-    fill: tuple[int, int, int],
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    *,
-    x: int = 32,
+    color: tuple[int, int, int],
+    scale: int = 1,
+    x_offset: int = 0,
 ) -> None:
-    box = draw.textbbox((0, 0), text, font=font)
-    draw.text((x - (box[2] - box[0]) // 2, y), text, fill=fill, font=font)
+    """Draw custom-font text horizontally centered on the display."""
+    draw_text(
+        frame,
+        text,
+        (SIZE - text_width(text, scale)) // 2 + x_offset,
+        y,
+        color,
+        scale,
+    )
 
 
-def _draw_weather_icon(draw: ImageDraw.ImageDraw, forecast: str, level: float) -> None:
-    condition = forecast.upper()
-    yellow = _dim((255, 205, 45), level)
-    if any(word in condition for word in ("RAIN", "SHOWER", "THUNDER")):
-        draw.ellipse((3, 44, 18, 54), fill=(205, 220, 225), outline=(105, 155, 205))
-        for x in (6, 11, 16):
-            draw.line((x, 54, x - 1, 57), fill=(65, 155, 255))
-    elif any(word in condition for word in ("HAZY", "MIST", "FOG")):
-        draw.ellipse((7, 42, 14, 49), fill=yellow)
-        draw.line((3, 51, 19, 51), fill=(125, 160, 175), width=2)
-        draw.line((5, 55, 17, 55), fill=(125, 160, 175), width=2)
-    elif "CLOUD" in condition:
-        draw.ellipse((3, 45, 19, 56), fill=(220, 228, 230), outline=(105, 155, 205))
-    else:
-        draw.ellipse((6, 45, 17, 56), fill=yellow)
-
-
-def _dim(color: tuple[int, int, int], level: float) -> tuple[int, int, int]:
+def dim_color(color: tuple[int, int, int], level: float) -> tuple[int, int, int]:
+    """Scale an RGB color for the pulse animation."""
     return tuple(round(channel * level) for channel in color)
+
+
+def nus_week_label(day: date) -> str:
+    """Return the NUS teaching-week label used by the original screen."""
+    first_block = datetime(2026, 8, 10).date()
+    second_block = datetime(2026, 9, 28).date()
+    if first_block <= day <= datetime(2026, 9, 18).date():
+        return f"W{(day - first_block).days // 7 + 1}"
+    if second_block <= day <= datetime(2026, 11, 13).date():
+        return f"W{(day - second_block).days // 7 + 7}"
+    return ""
+
+
+def draw_cloud(frame: bytearray, x: int, y: int) -> None:
+    """Draw the original outlined cloud pixel mask."""
+    blue = (105, 155, 205)
+    cloud = (225, 230, 228)
+    mask = (
+        "......BBBB............",
+        ".....BWWWWWWW.........",
+        ".....BWWWWWWWW.BBB....",
+        ".....BWWWWWWWWBWWW....",
+        "..BBBWWWWWWWWWBWWWWW..",
+        ".BWWWWWWWWWWWBBWWWWWW.",
+        ".BWWWWWWWWWWBWWWWWWWWW",
+        ".BWWWWWWWWWWBWWWWWWWWW",
+        ".BBWWWWWWWWWWWWWWWWWWW",
+        "..BBBBBBBBBBBBBBBBBBBB.",
+        "....BBBBBBBBBBBBBBB....",
+    )
+    for row, pixels in enumerate(mask):
+        for column, pixel in enumerate(pixels):
+            if pixel == "B":
+                set_pixel(frame, x + column, y + row, blue)
+            elif pixel == "W":
+                set_pixel(frame, x + column, y + row, cloud)
+
+
+def draw_weather_icon(frame: bytearray, forecast: str, animation_frame: int) -> None:
+    """Draw the original animated icon selected from the forecast text."""
+    condition = forecast.upper()
+    x = 9
+    y = 42
+    yellow = dim_color((255, 205, 45), ANIMATION_LEVELS[animation_frame])
+
+    if any(word in condition for word in ("HAZY", "MIST", "FOG")):
+        fill_rect(frame, x + 7, y, 6, 6, yellow)
+        for offset, width in ((7, 17), (10, 13)):
+            fill_rect(frame, x + 2, y + offset, width, 2, (125, 160, 175))
+    elif "WIND" in condition:
+        for row, width in ((2, 15), (6, 19), (10, 12)):
+            fill_rect(frame, x + 2, y + row, width, 2, (95, 205, 235))
+    elif any(word in condition for word in ("RAIN", "SHOWER")):
+        draw_cloud(frame, x, y)
+        rain_y = y + 11 + animation_frame % 2
+        for rain_x in (x + 5, x + 10, x + 15):
+            set_pixel(frame, rain_x, rain_y, (65, 155, 255))
+            set_pixel(frame, rain_x - 1, rain_y + 1, (65, 155, 255))
+        if "THUNDER" in condition:
+            fill_rect(frame, x + 10, y + 9, 2, 3, (255, 220, 40))
+            set_pixel(frame, x + 9, y + 12, (255, 220, 40))
+    elif "CLOUD" in condition:
+        if "PARTLY" in condition:
+            fill_rect(frame, x + 1, y, 6, 6, yellow)
+        draw_cloud(frame, x, y + 2)
+    else:
+        fill_rect(frame, x + 7, y + 3, 7, 7, yellow)
+        for sun_x, sun_y in ((10, 0), (10, 12), (4, 6), (16, 6)):
+            set_pixel(frame, x + sun_x, y + sun_y, yellow)
