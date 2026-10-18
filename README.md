@@ -4,7 +4,8 @@ Local-first Python server for managing Divoom Pixoo 64 displays across NUSC. It 
 
 - the minimal local first Divoom cloud and MQTT server (inspired by [Drun555/PixooPal](https://github.com/Drun555/PixooPal));
 - the Singapore PSI/weather display;
-- configurable multi-screen playlists and 15-minute refreshes;
+- live UTown shuttle arrivals with the next two buses per route;
+- configurable multi-screen playlists and one-minute refreshes;
 - FastAPI status and manual-refresh endpoints;
 - reproducible `uv` dependencies, Docker Compose, and tests.
 
@@ -16,9 +17,8 @@ The project does not include the original PixooPal web UI or community clockface
 Pixoo firmware -- HTTP :80 --> FastAPI cloud bootstrap
                -- MQTT :1883 -> Pixoo-specific MQTT broker
 
-data.gov.sg --> haze screen --> playlist --> hosted GIF
-                                                |-----> Pixoo downloads GIF
-                                                |-----> screen 2 downloads GIF
+data.gov.sg ---------> haze screen -------+
+NUS bus API ---------> bus-arrival screen +--> playlist --> hosted GIF --> Pixoo
 ```
 
 The source tree follows those responsibilities directly:
@@ -30,7 +30,7 @@ src/pixoo_server/
 ├── cloud_emulator/     # Divoom bootstrap routes, responses, and device state
 ├── mqtt/               # MQTT broker lifecycle and packet encoding/decoding
 ├── display/            # Pixoo delivery client, playlists, and scheduler
-│   └── screens/        # One module per information screen, starting with haze
+│   └── screens/        # One module per information screen
 └── main.py             # FastAPI composition root and server entry point
 ```
 
@@ -47,12 +47,17 @@ device_id = 12345
 [[screens]]
 name = "makerspace"
 address = "10.42.0.8"
-refresh_seconds = 900
+refresh_seconds = 60
 
 [[screens.views]]
 type = "haze"
 duration_seconds = 10
 region = "west"
+
+[[screens.views]]
+type = "bus_arrival"
+duration_seconds = 10
+stop = "UTOWN"
 ```
 
 Add another `[[screens]]` block to drive another Pixoo independently. A physical screen may contain multiple `[[screens.views]]` entries. Each content screen is shown for 10 seconds by default, or for its configured `duration_seconds`, before the GIF advances to the next one. The Pixoo loops the complete GIF automatically and indefinitely.
@@ -68,6 +73,7 @@ Environment variables:
 | `PUBLIC_IP` | `80.92.211.126` | Harmless bootstrap response value |
 | `PIXOO_CONFIG` | `pixoo.toml` | TOML configuration path |
 | `DATA_GOV_SG_API_KEY` | empty | Optional higher-rate-limit API key |
+| `NUS_BUS_API_BASE_URL` | `https://bus.hewliyang.com/api/stop` | Configurable NUS bus timing proxy |
 
 Configuration is validated by Pydantic. Explicit constructor values used by tests have the
 highest priority, followed by environment variables, `.env`, `pixoo.toml`, and built-in defaults.

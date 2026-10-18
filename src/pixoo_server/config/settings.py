@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     http_port: int = Field(default=80, ge=1, le=65535, validation_alias="HTTP_PORT")
     mqtt_port: int = Field(default=1883, ge=1, le=65535, validation_alias="MQTT_PORT")
     api_key: str | None = Field(default=None, validation_alias="DATA_GOV_SG_API_KEY")
+    bus_api_base_url: str = Field(
+        default="https://bus.hewliyang.com/api/stop",
+        min_length=1,
+        validation_alias="NUS_BUS_API_BASE_URL",
+    )
     screens: tuple[PixooConfig, ...] = ()
 
     @classmethod
@@ -78,7 +83,7 @@ class Settings(BaseSettings):
             file_secret_settings,
         )
 
-    @field_validator("host_ip", "public_ip", "api_key")
+    @field_validator("host_ip", "public_ip", "api_key", "bus_api_base_url")
     @classmethod
     def strip_strings(cls, value: str | None) -> str | None:
         return value.strip() if value else value

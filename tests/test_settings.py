@@ -30,6 +30,7 @@ region = "central"
     assert settings.device_id == 101
     assert settings.screens[0].name == "lobby"
     assert settings.screens[0].views[0].options == {"region": "central"}
+    assert settings.screens[0].refresh_seconds == 60
 
 
 def test_rejects_invalid_ports_and_duplicate_screens() -> None:

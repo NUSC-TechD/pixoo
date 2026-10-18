@@ -6,9 +6,14 @@ device_id = 12345
 [[screens]]
 name = "makersSaga"
 address = "10.42.0.8"
-refresh_seconds = 900
+refresh_seconds = 60
 
 [[screens.views]]
 type = "haze"
 duration_seconds = 10
 region = "west"
+
+[[screens.views]]
+type = "bus_arrival"
+duration_seconds = 10
+stop = "UTOWN"

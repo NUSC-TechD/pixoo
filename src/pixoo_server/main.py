@@ -26,6 +26,7 @@ def create_app(settings: Settings | None = None, *, enable_services: bool = True
         config.screens,
         config.api_key,
         media_base_url=f"http://{config.host_ip}:{config.http_port}",
+        bus_api_base_url=config.bus_api_base_url,
     )
 
     @asynccontextmanager
