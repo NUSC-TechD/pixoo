@@ -87,7 +87,7 @@ def format_eta(value: str) -> str:
 def render_frame(arrivals: BusStopTimings) -> bytes:
     """Render one static bus-arrival frame with two ETAs per route."""
     frame = new_frame()
-    draw_centered(frame, arrivals.bus_stop_name[:10], 2, (235, 240, 245))
+    draw_centered(frame, f"{arrivals.bus_stop_name} BUS"[:10], 2, (235, 240, 245))
     fill_rect(frame, 2, 9, 60, 1, (35, 45, 55))
 
     for index, timing in enumerate(arrivals.timings[:5]):

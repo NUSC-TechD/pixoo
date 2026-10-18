@@ -141,7 +141,6 @@ def build_playlist(items: list[tuple[ViewConfig, FrameSequence]]) -> FrameSequen
         raise ValueError("All views in a playlist must use the same frame speed")
     frames: list[bytes] = []
     for view, sequence in items:
-        sequence_duration_ms = len(sequence.frames) * speed_ms
-        repeats = max(1, math.ceil(view.duration_seconds * 1000 / sequence_duration_ms))
-        frames.extend(sequence.frames * repeats)
+        frame_count = math.ceil(view.duration_seconds * 1000 / speed_ms)
+        frames.extend(sequence.frames[index % len(sequence.frames)] for index in range(frame_count))
     return FrameSequence(frames=frames, speed_ms=speed_ms)

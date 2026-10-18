@@ -7,6 +7,7 @@ from pixoo_server.display.gif import encode_gif
 from pixoo_server.display.models import FrameSequence
 from pixoo_server.display.scheduler import build_playlist
 from pixoo_server.display.screens.bus_arrival import BusStopTimings, BusTiming, render_frame
+from pixoo_server.display.screens.haze import render_frame as render_haze_frame
 
 
 def test_playlist_repeats_each_view_for_its_duration() -> None:
@@ -62,3 +63,42 @@ def test_bus_frame_can_share_a_playlist_with_an_animated_screen() -> None:
 
     assert playlist.speed_ms == 250
     assert len(playlist.frames) == 80
+
+
+def test_encoded_haze_and_bus_each_last_exactly_five_seconds() -> None:
+    haze = FrameSequence(
+        frames=[
+            render_haze_frame(
+                171,
+                {"forecast": "Partly Cloudy", "low": 25, "high": 32, "date": "2026-10-18"},
+                phase,
+            )
+            for phase in range(8)
+        ]
+    )
+    bus_frame = render_frame(
+        BusStopTimings(
+            busStopName="UTOWN",
+            busStopCaption="University Town",
+            timings=[BusTiming(name="D1", arrivalTime="10", nextArrivalTime="35")],
+        )
+    )
+    playlist = build_playlist(
+        [
+            (ViewConfig(type="haze", duration_seconds=5), haze),
+            (ViewConfig(type="bus_arrival", duration_seconds=5), FrameSequence(frames=[bus_frame])),
+        ]
+    )
+
+    assert playlist.frames == (haze.frames * 3)[:20] + [bus_frame] * 20
+    with Image.open(BytesIO(encode_gif(playlist))) as animation:
+        assert animation.n_frames == 40
+        durations = []
+        for index in range(animation.n_frames):
+            animation.seek(index)
+            assert animation.tile[0][1] == (0, 0, 64, 64)
+            durations.append(animation.info["duration"])
+            assert animation.convert("RGB").tobytes() == playlist.frames[index]
+        assert durations == [250] * 40
+        assert sum(durations[:20]) == 5000
+        assert sum(durations[20:]) == 5000
