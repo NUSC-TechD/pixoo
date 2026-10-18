@@ -51,12 +51,12 @@ refresh_seconds = 60
 
 [[screens.views]]
 type = "haze"
-duration_seconds = 10
+duration_seconds = 5
 region = "west"
 
 [[screens.views]]
 type = "bus_arrival"
-duration_seconds = 10
+duration_seconds = 5
 stop = "UTOWN"
 ```
 
