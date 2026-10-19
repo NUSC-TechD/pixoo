@@ -67,6 +67,13 @@ with animated `RETRYING...` dots while other views continue refreshing. The serv
 logs the failure and retries at the next playlist refresh; successful responses
 restore the normal content.
 
+The NUS bus proxy is a community-run service, so bus requests are throttled in-process:
+each stop is fetched at most once per minute no matter how often screens refresh (including
+manual refreshes), responses are cached for at least that minute (longer if the server sends
+`Cache-Control: max-age`) and revalidated with `ETag`/`Last-Modified`, and failures back off
+exponentially with jitter up to 30 minutes, honouring `Retry-After`. Requests identify
+themselves as `NUSC-Pixoo-BusBoard/0.1 (+https://github.com/NUSC-TechD/pixoo; ...)`.
+
 Environment variables:
 
 | Variable | Default | Purpose |

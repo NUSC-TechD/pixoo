@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..drawing import draw_centered, draw_text, fill_rect, new_frame, text_width
+from ..http_cache import CachedJsonFetcher, FetchThrottledError
 from ..models import FrameSequence
 from .unavailable import render_unavailable as render_unavailable_notice
 
 logger = logging.getLogger(__name__)
+
+USER_AGENT = (
+    "NUSC-Pixoo-BusBoard/0.1 "
+    "(+https://github.com/NUSC-TechD/pixoo; Bryan Wong <wongzhaowu@gmail.com>)"
+)
+MIN_REQUEST_INTERVAL_SECONDS = 60
 
 ROUTE_COLORS = {
     "D1": (210, 90, 230),
@@ -58,19 +67,31 @@ class BusArrivalScreen:
     ETA columns. It only renders content; the display scheduler controls when
     the resulting frame is encoded and uploaded to the physical Pixoo.
     Failed requests produce an animated unavailable-data view so other content
-    can continue refreshing. The next scheduled render retries the request.
+    can continue refreshing. Requests go through a :class:`CachedJsonFetcher`,
+    so each stop is fetched from the third-party API at most once per minute
+    regardless of how often the screen is rendered.
     """
 
-    def __init__(self, api_base_url: str) -> None:
+    def __init__(
+        self,
+        api_base_url: str,
+        *,
+        min_interval: float = MIN_REQUEST_INTERVAL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._api_base_url = api_base_url.rstrip("/")
+        self._fetcher = CachedJsonFetcher(
+            {"Accept": "application/json", "User-Agent": USER_AGENT},
+            min_interval=min_interval,
+            clock=clock,
+        )
 
     async def render(self, client: httpx.AsyncClient, options: dict[str, Any]) -> FrameSequence:
         stop = str(options.get("stop", "UTOWN")).upper()
         try:
-            response = await client.get(f"{self._api_base_url}/{stop}")
-            response.raise_for_status()
-            arrivals = parse_bus_arrivals(response.json())
-        except (httpx.HTTPError, ValueError) as error:
+            payload = await self._fetcher.get_json(client, f"{self._api_base_url}/{stop}")
+            arrivals = parse_bus_arrivals(payload)
+        except (httpx.HTTPError, ValueError, FetchThrottledError) as error:
             logger.warning("Bus arrivals unavailable for %s: %s", stop, error)
             return render_unavailable(stop)
         return FrameSequence(frames=[render_frame(arrivals)], speed_ms=250)
