@@ -51,6 +51,8 @@ def test_screen_fetches_the_configured_stop() -> None:
     async def run() -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url == "https://bus.example/api/stop/UTOWN"
+            assert request.headers["user-agent"] == "nusc-pixoo/0.1"
+            assert request.headers["accept"] == "application/json"
             return httpx.Response(200, json=bus_payload())
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:

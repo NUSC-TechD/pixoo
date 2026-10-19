@@ -67,7 +67,10 @@ class BusArrivalScreen:
     async def render(self, client: httpx.AsyncClient, options: dict[str, Any]) -> FrameSequence:
         stop = str(options.get("stop", "UTOWN")).upper()
         try:
-            response = await client.get(f"{self._api_base_url}/{stop}")
+            response = await client.get(
+                f"{self._api_base_url}/{stop}",
+                headers={"Accept": "application/json", "User-Agent": "nusc-pixoo/0.1"},
+            )
             response.raise_for_status()
             arrivals = parse_bus_arrivals(response.json())
         except (httpx.HTTPError, ValueError) as error:
