@@ -10,6 +10,7 @@ from pixoo_server.display.gif import encode_gif
 from pixoo_server.display.models import FrameSequence
 from pixoo_server.display.scheduler import DisplayScheduler, build_playlist
 from pixoo_server.display.screens.bus_arrival import (
+    BusArrivalScreen,
     BusStopTimings,
     BusTiming,
     render_frame,
@@ -146,9 +147,14 @@ def test_bus_failure_keeps_haze_refreshing_and_uploads_fallback(monkeypatch) -> 
             (config,), None, "http://server.example", "https://bus.example/api/stop"
         )
         fallback = render_unavailable("UTOWN")
+        now = 0.0
+        scheduler._screen_types["bus_arrival"] = BusArrivalScreen(
+            "https://bus.example/api/stop", clock=lambda: now
+        )
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             scheduler._client = client
             for attempt in (1, 2):
+                now = attempt * 120.0
                 await scheduler.refresh("test")
                 data = scheduler.animation("test")
                 assert data is not None
@@ -214,9 +220,14 @@ def test_haze_failure_keeps_bus_timings_refreshing(failed_url: str) -> None:
             (config,), None, "http://server.example", "https://bus.example/api/stop"
         )
         fallback = render_unavailable_notice("HAZE")
+        now = 0.0
+        scheduler._screen_types["bus_arrival"] = BusArrivalScreen(
+            "https://bus.example/api/stop", clock=lambda: now
+        )
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             scheduler._client = client
             for attempt in (1, 2):
+                now = attempt * 120.0
                 await scheduler.refresh("test")
                 data = scheduler.animation("test")
                 assert data is not None

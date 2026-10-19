@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from pixoo_server.display.screens.bus_arrival import (
+    USER_AGENT,
     BusArrivalScreen,
     format_eta,
     parse_bus_arrivals,
@@ -51,6 +52,8 @@ def test_screen_fetches_the_configured_stop() -> None:
     async def run() -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             assert request.url == "https://bus.example/api/stop/UTOWN"
+            assert request.headers["user-agent"] == USER_AGENT
+            assert request.headers["accept"] == "application/json"
             return httpx.Response(200, json=bus_payload())
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -60,6 +63,29 @@ def test_screen_fetches_the_configured_stop() -> None:
 
         assert len(sequence.frames) == 1
         assert sequence.speed_ms == 250
+
+    asyncio.run(run())
+
+
+def test_frequent_renders_request_each_stop_at_most_once_per_minute() -> None:
+    async def run() -> None:
+        requested: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requested.append(request.url.path)
+            return httpx.Response(200, json=bus_payload())
+
+        now = 0.0
+        screen = BusArrivalScreen("https://bus.example/api/stop", clock=lambda: now)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            for tick in range(120):
+                now = tick * 0.5
+                await asyncio.gather(
+                    screen.render(client, {"stop": "UTOWN"}),
+                    screen.render(client, {"stop": "COM3"}),
+                )
+
+        assert sorted(requested) == ["/api/stop/COM3", "/api/stop/UTOWN"]
 
     asyncio.run(run())
 
@@ -82,9 +108,11 @@ def test_api_failures_show_animated_fallback_and_recover(failure: str, caplog) -
                 return httpx.Response(200, text="not JSON")
             return httpx.Response(200, json={"error": "Unavailable"})
 
-        screen = BusArrivalScreen("https://bus.example/api/stop")
+        now = 0.0
+        screen = BusArrivalScreen("https://bus.example/api/stop", clock=lambda: now)
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             fallback = await screen.render(client, {"stop": "UTOWN"})
+            now = 120.0
             recovered = await screen.render(client, {"stop": "UTOWN"})
 
         assert fallback == render_unavailable("UTOWN")
