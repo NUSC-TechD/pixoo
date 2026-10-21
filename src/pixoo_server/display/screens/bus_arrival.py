@@ -102,13 +102,25 @@ def format_eta(value: str) -> str:
     return f"{cleaned}M" if cleaned.isdigit() else cleaned[:4]
 
 
+def route_id_key(name: str) -> tuple[str, int]:
+    """Order a shuttle route by its letter prefix, then its numeric id."""
+    letters = name.rstrip("0123456789")
+    number = name[len(letters) :]
+    return (letters.upper(), int(number) if number else 0)
+
+
 def render_frame(arrivals: BusStopTimings) -> bytes:
-    """Render one static bus-arrival frame with two ETAs per route."""
+    """Render one static bus-arrival frame with two ETAs per route.
+
+    Routes stay in ID order (D1, D2, …) so the list does not reshuffle as
+    arrival times change.
+    """
     frame = new_frame()
     draw_centered(frame, f"{arrivals.bus_stop_name} BUS"[:10], 2, (235, 240, 245))
     fill_rect(frame, 2, 9, 60, 1, (35, 45, 55))
 
-    for index, timing in enumerate(arrivals.timings[:5]):
+    timings = sorted(arrivals.timings, key=lambda timing: route_id_key(timing.name))
+    for index, timing in enumerate(timings[:5]):
         y = 13 + index * 10
         color = ROUTE_COLORS.get(timing.name, (85, 145, 220))
         fill_rect(frame, 2, y - 1, 2, 7, color)

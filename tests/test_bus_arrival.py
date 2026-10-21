@@ -5,10 +5,13 @@ import pytest
 
 from pixoo_server.display.screens.bus_arrival import (
     BusArrivalScreen,
+    BusStopTimings,
+    BusTiming,
     format_eta,
     parse_bus_arrivals,
     render_frame,
     render_unavailable,
+    route_id_key,
 )
 
 
@@ -39,6 +42,38 @@ def test_parses_two_arrivals_and_renders_all_utown_routes() -> None:
     assert arrivals.timings[0].next_arrival_time == "35"
     assert len(frame) == 64 * 64 * 3
     assert len(set(frame)) > 10
+
+
+def test_routes_render_in_id_order_not_arrival_order() -> None:
+    by_arrival = BusStopTimings(
+        busStopName="UTOWN",
+        busStopCaption="University Town",
+        timings=[
+            BusTiming(name="R2", arrivalTime="1", nextArrivalTime="20"),
+            BusTiming(name="D2", arrivalTime="3", nextArrivalTime="18"),
+            BusTiming(name="D1", arrivalTime="10", nextArrivalTime="35"),
+            BusTiming(name="R1", arrivalTime="12", nextArrivalTime="30"),
+            BusTiming(name="P", arrivalTime="-", nextArrivalTime="-"),
+        ],
+    )
+    by_id = BusStopTimings(
+        busStopName="UTOWN",
+        busStopCaption="University Town",
+        timings=[
+            BusTiming(name="D1", arrivalTime="10", nextArrivalTime="35"),
+            BusTiming(name="D2", arrivalTime="3", nextArrivalTime="18"),
+            BusTiming(name="P", arrivalTime="-", nextArrivalTime="-"),
+            BusTiming(name="R1", arrivalTime="12", nextArrivalTime="30"),
+            BusTiming(name="R2", arrivalTime="1", nextArrivalTime="20"),
+        ],
+    )
+
+    assert sorted(
+        [timing.name for timing in by_arrival.timings],
+        key=route_id_key,
+    ) == ["D1", "D2", "P", "R1", "R2"]
+    assert sorted(["D10", "D2", "D1"], key=route_id_key) == ["D1", "D2", "D10"]
+    assert render_frame(by_arrival) == render_frame(by_id)
 
 
 def test_formats_arrivals_for_the_pixel_display() -> None:
