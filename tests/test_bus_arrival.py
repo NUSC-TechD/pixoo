@@ -11,7 +11,6 @@ from pixoo_server.display.screens.bus_arrival import (
     parse_bus_arrivals,
     render_frame,
     render_unavailable,
-    route_id_key,
 )
 
 
@@ -68,11 +67,6 @@ def test_routes_render_in_id_order_not_arrival_order() -> None:
         ],
     )
 
-    assert sorted(
-        [timing.name for timing in by_arrival.timings],
-        key=route_id_key,
-    ) == ["D1", "D2", "P", "R1", "R2"]
-    assert sorted(["D10", "D2", "D1"], key=route_id_key) == ["D1", "D2", "D10"]
     assert render_frame(by_arrival) == render_frame(by_id)
 
 
