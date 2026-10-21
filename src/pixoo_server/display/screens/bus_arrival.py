@@ -67,7 +67,10 @@ class BusArrivalScreen:
     async def render(self, client: httpx.AsyncClient, options: dict[str, Any]) -> FrameSequence:
         stop = str(options.get("stop", "UTOWN")).upper()
         try:
-            response = await client.get(f"{self._api_base_url}/{stop}")
+            response = await client.get(
+                f"{self._api_base_url}/{stop}",
+                headers={"Accept": "application/json", "User-Agent": "nusc-pixoo/0.1"},
+            )
             response.raise_for_status()
             arrivals = parse_bus_arrivals(response.json())
         except (httpx.HTTPError, ValueError) as error:
@@ -100,12 +103,17 @@ def format_eta(value: str) -> str:
 
 
 def render_frame(arrivals: BusStopTimings) -> bytes:
-    """Render one static bus-arrival frame with two ETAs per route."""
+    """Render one static bus-arrival frame with two ETAs per route.
+
+    Routes stay in name order (D1, D2, …) so the list does not reshuffle as
+    arrival times change.
+    """
     frame = new_frame()
     draw_centered(frame, f"{arrivals.bus_stop_name} BUS"[:10], 2, (235, 240, 245))
     fill_rect(frame, 2, 9, 60, 1, (35, 45, 55))
 
-    for index, timing in enumerate(arrivals.timings[:5]):
+    timings = sorted(arrivals.timings, key=lambda timing: timing.name)
+    for index, timing in enumerate(timings[:5]):
         y = 13 + index * 10
         color = ROUTE_COLORS.get(timing.name, (85, 145, 220))
         fill_rect(frame, 2, y - 1, 2, 7, color)
